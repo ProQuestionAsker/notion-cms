@@ -7,6 +7,8 @@ const fs = require("fs"),
 
 let allPosts = [];
 let postMap = null;
+let backlinks = [];
+
 
 // Initializations
 const notion = new Client({
@@ -80,18 +82,52 @@ function styledText(obj) {
     }
 
     if (obj.type === "mention"){
-        content = `[${obj.plain_text}](${postMap.get(obj.plain_text)})`;
-        console.log({obj})
+        const slug = postMap.get(obj.plain_text)
+        // the link is to a private Notion page
+        if (slug === undefined){
+            // no link if there isn't one
+            content = `${obj.plain_text}`
+        } else {
+            // include a link if one exists
+            content = `[${obj.plain_text}](${slug})`
+        }
+        //console.log({content})
     }
     return content;
   }
+
+async function findBacklinks(block){
+
+}
 
 /**
  * Converts post in Notion into Markdown format.
  * @param {Object} post  Post to convert to Markdown.
  */
  async function createMarkdownFile(post) {
-     console.log({post})
+    // collect all block content from the post
+    const page_blocks = await notion.blocks.children.list({
+        block_id: post.id,
+      });
+
+    for (block of page_blocks.results) {
+        const type = block.type
+
+        if (type == 'paragraph'){
+            const mentions = block.paragraph.text
+                .filter(d => d.type === 'mention')
+                .map(d =>({
+                    slug: postMap.get(d.plain_text),
+                    linkedFrom: post.slug
+                }))
+                .filter(d => d.slug !== undefined)
+                .filter(d => d)
+            if (mentions.length){
+                backlinks.push(mentions)
+            }
+        }
+    }
+    
     let text =
       `---\ntitle: "${post.title}"\n` +
       `published: "${post.created.substring(0, 10)}"\n` +
@@ -101,9 +137,7 @@ function styledText(obj) {
       //`category: "${post.category.toLowerCase()}"\n` +
       `type: "${post.type}"\n---\n\n`;
   
-    const page_blocks = await notion.blocks.children.list({
-      block_id: post.id,
-    });
+
   
     // Generate text from block
     for (block of page_blocks.results) {
@@ -152,6 +186,7 @@ function styledText(obj) {
     return fileName;
   }
 
+
 async function queryDatabase(id){
     const content = await notion.databases
     .query({
@@ -176,8 +211,6 @@ async function queryDatabase(id){
     }
 
     const response = res[0].results.concat(res[1].results)
-
-    console.log({response})
 
     // // Pulls the posts in my blog database checked Publish
     // const response2 = await notion.databases
@@ -206,7 +239,7 @@ async function queryDatabase(id){
         });
       }
     }
-    console.log({posts})
+    // console.log({posts})
     return posts;
   }
 
@@ -226,12 +259,19 @@ async function queryDatabase(id){
       allPosts = posts.map(d => [d.title, d.slug])
 
       postMap = new Map(allPosts)
+     // console.log({backlinks})
   
       for (const post of posts) {
-        console.log({post})
         let name = await createMarkdownFile(post);
         status.posts.push({ id: post.id, name });
       }
+
+      const filePath = `${process.env.BLOG_DIRECTORY}/src/backlinks.json`
+      console.log({filePath, backlinks})
+
+      fs.writeFile(filePath, JSON.stringify(backlinks), function err(e) {
+        if (e) throw e;
+      });
     } catch (error) {
       status.success = false;
       handleError(error);
