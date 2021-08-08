@@ -133,6 +133,7 @@ async function findBacklinks(block){
       `published: "${post.created.substring(0, 10)}"\n` +
       `updated: "${post.edited.substring(0, 10)}"\n` +
       `completeness: "${post.completeness}"\n` +
+      `slug: "${post.slug}"\n` +
       //`description: "${post.description}"\n` +
       //`category: "${post.category.toLowerCase()}"\n` +
       `type: "${post.type}"\n---\n\n`;
@@ -267,9 +268,10 @@ async function queryDatabase(id){
       }
 
       const filePath = `${process.env.BLOG_DIRECTORY}/src/backlinks.json`
-      console.log({filePath, backlinks})
+      const flatLinks = backlinks.flat()
+      console.log({flatLinks})
 
-      fs.writeFile(filePath, JSON.stringify(backlinks), function err(e) {
+      fs.writeFile(filePath, JSON.stringify(flatLinks), function err(e) {
         if (e) throw e;
       });
     } catch (error) {
