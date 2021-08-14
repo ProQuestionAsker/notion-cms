@@ -160,6 +160,7 @@ function formatImage(block){
     let text =
       `---\ntitle: "${post.title}"\n` +
       `published: "${post.custom ? post.custom.date.start :  post.created.substring(0, 10)}"\n` +
+      `featured: "${post.featured}"\n` +
       `updated: "${post.edited.substring(0, 10)}"\n` +
       `completeness: "${post.completeness}"\n` +
       `slug: "${post.slug}"\n` +
@@ -280,11 +281,13 @@ async function queryDatabase(id){
       const full_posts = response.length > 0 ? response : [];
       // Pulls relevant properties of the posts
       for (const post of full_posts) {
+
         posts.push({
           title: post.properties.Name.title[0].plain_text,
           id: post.id,
           custom: post.properties['Custom Created'],
           created: post.created_time,
+          featured: post.properties.Featured.checkbox,
           edited: post.last_edited_time,
           description: post.properties.Description == 'undefined' ? '' : post.properties.Description,
           slug: post.properties.Slug.rich_text[0].plain_text,
@@ -314,11 +317,9 @@ async function queryDatabase(id){
       allPosts = posts.map(d => [d.title, d.slug])
 
       postMap = new Map(allPosts)
-
   
       for (const post of posts) {
-        console.log({custom: post.custom})
-        if (!post.custom) console.log('missing')
+
         let name = await createMarkdownFile(post);
         status.posts.push({ id: post.id, name });
       }
