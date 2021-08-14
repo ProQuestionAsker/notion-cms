@@ -96,8 +96,26 @@ function styledText(obj) {
     return content;
   }
 
-async function findBacklinks(block){
+async function findChildren(block, title){
+    const childBlock = await notion.blocks.children.list({
+        block_id: block.id
+    })
+    let results;
 
+    for (block of childBlock.results) {
+        const type = block.type
+
+        if (type == 'paragraph'){
+            const text = block.paragraph.text[0].plain_text
+
+            if (title.includes('Code')){
+                const language = title.split("- ")[1]
+                const full = "```" + language + "\n" + text + "\n" + "```\n"
+                results = full
+            }   
+        }
+    }
+    return results
 }
 
 /**
@@ -114,7 +132,9 @@ async function findBacklinks(block){
         const type = block.type
 
         if (type == 'paragraph'){
-            const mentions = block.paragraph.text
+            const text = block.paragraph.text
+
+            const mentions = text
                 .filter(d => d.type === 'mention')
                 .map(d =>({
                     slug: postMap.get(d.plain_text),
@@ -125,6 +145,8 @@ async function findBacklinks(block){
             if (mentions.length){
                 backlinks.push(mentions)
             }
+        } else if (type == 'toggle'){
+            // console.log({tog: block.toggle})
         }
     }
     
@@ -143,7 +165,15 @@ async function findBacklinks(block){
     // Generate text from block
     for (block of page_blocks.results) {
       // Blocks can be: paragraph, heading_1, heading_2, heading_3, or 'unsupported' (quote)
-  
+    //   if (block.has_children === true){
+    //       if (block.type === 'toggle'){
+    //           const toggleTitle = block.toggle.text[0].plain_text
+    //           const childBlocks = findChildren(block, toggleTitle)
+    //           console.log({childBlocks})
+    //       }
+
+    //   }  
+
       switch (block.type) {
         case "paragraph":
           text += "\n";
@@ -166,6 +196,11 @@ async function findBacklinks(block){
           break;
         case "bulleted_list_item":
           text += " - " + block.bulleted_list_item.text[0].plain_text + "\n";
+          break;
+        case "toggle":
+          text += "\n";
+          const toggleTitle = block.toggle.text[0].plain_text
+          text += await findChildren(block, toggleTitle)
           break;
         default:
           break;
@@ -269,7 +304,6 @@ async function queryDatabase(id){
 
       const filePath = `${process.env.BLOG_DIRECTORY}/src/backlinks.json`
       const flatLinks = backlinks.flat()
-      console.log({flatLinks})
 
       fs.writeFile(filePath, JSON.stringify(flatLinks), function err(e) {
         if (e) throw e;
