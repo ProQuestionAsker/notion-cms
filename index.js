@@ -119,8 +119,9 @@ async function findChildren(block, title){
 
 function formatImage(block){
     if (block.image){
-        return "<img src='" + block.image.url + "' alt='" + block.image.caption + "' >"
-    }
+        const caption = block.image.caption[0] ?  block.image.caption[0].plain_text : ''
+        return `<img src="${block.image.url}" alt="${caption}" >`
+    } else return ""
 }
 
 
@@ -153,17 +154,18 @@ function formatImage(block){
             }
         }
     }
+
+    
     
     let text =
       `---\ntitle: "${post.title}"\n` +
-      `published: "${post.created.substring(0, 10)}"\n` +
+      `published: "${post.custom ? post.custom.date.start :  post.created.substring(0, 10)}"\n` +
       `updated: "${post.edited.substring(0, 10)}"\n` +
       `completeness: "${post.completeness}"\n` +
       `slug: "${post.slug}"\n` +
-      //`description: "${post.description}"\n` +
+      `description: "${post.description}"\n` +
       //`category: "${post.category.toLowerCase()}"\n` +
       `type: "${post.type}"\n---\n\n`;
-  
 
   
     // Generate text from block
@@ -281,9 +283,10 @@ async function queryDatabase(id){
         posts.push({
           title: post.properties.Name.title[0].plain_text,
           id: post.id,
+          custom: post.properties['Custom Created'],
           created: post.created_time,
           edited: post.last_edited_time,
-          // description: post.properties.Description.rich_text[0].plain_text,
+          description: post.properties.Description == 'undefined' ? '' : post.properties.Description,
           slug: post.properties.Slug.rich_text[0].plain_text,
           type: post.properties.Type ? post.properties.Type.select.name : '',
           completeness: post.properties.Completeness ? post.properties.Completeness.select.name : ''
@@ -291,7 +294,6 @@ async function queryDatabase(id){
         });
       }
     }
-
     return posts;
   }
 
@@ -305,14 +307,18 @@ async function queryDatabase(id){
       success: true,
       posts: [],
     };
+
   
     try {
       let posts = await getPostsToPublish();
       allPosts = posts.map(d => [d.title, d.slug])
 
       postMap = new Map(allPosts)
+
   
       for (const post of posts) {
+        console.log({custom: post.custom})
+        if (!post.custom) console.log('missing')
         let name = await createMarkdownFile(post);
         status.posts.push({ id: post.id, name });
       }
@@ -325,6 +331,7 @@ async function queryDatabase(id){
       });
     } catch (error) {
       status.success = false;
+      console.log({error})
       handleError(error);
     }
   
