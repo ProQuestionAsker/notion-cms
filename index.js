@@ -117,6 +117,12 @@ async function findChildren(block, title){
     return results
 }
 
+function formatImage(block){
+    if (block.image){
+        return "<img src='" + block.image.url + "' alt='" + block.image.caption + "' >"
+    }
+}
+
 
 /**
  * Converts post in Notion into Markdown format.
@@ -208,6 +214,9 @@ async function findChildren(block, title){
           text += "\n";
           const toggleTitle = block.toggle.text[0].plain_text
           text += await findChildren(block, toggleTitle)
+          break;
+        case "unsupported":
+            text += formatImage(block)
           break;
         default:
           break;
