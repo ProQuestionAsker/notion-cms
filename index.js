@@ -91,7 +91,6 @@ function styledText(obj) {
             // include a link if one exists
             content = `[${obj.plain_text}](${slug})`
         }
-        //console.log({content})
     }
     return content;
   }
@@ -117,6 +116,7 @@ async function findChildren(block, title){
     }
     return results
 }
+
 
 /**
  * Converts post in Notion into Markdown format.
@@ -145,8 +145,6 @@ async function findChildren(block, title){
             if (mentions.length){
                 backlinks.push(mentions)
             }
-        } else if (type == 'toggle'){
-            // console.log({tog: block.toggle})
         }
     }
     
@@ -173,6 +171,7 @@ async function findChildren(block, title){
     //       }
 
     //   }  
+  
 
       switch (block.type) {
         case "paragraph":
@@ -195,7 +194,15 @@ async function findChildren(block, title){
           text += "### " + block.heading_3.text[0].plain_text + "\n";
           break;
         case "bulleted_list_item":
-          text += " - " + block.bulleted_list_item.text[0].plain_text + "\n";
+        //   const bullets = []
+        //   deconstructBulletedList(block)
+          text += "\n" + " - ";
+          for (textblock of block.bulleted_list_item.text) {
+            text +=  styledText(textblock) + " ";
+          }
+          text += "\n";
+
+          //text += " - " + block.bulleted_list_item.text[0].plain_text + "\n";
           break;
         case "toggle":
           text += "\n";
@@ -255,7 +262,7 @@ async function queryDatabase(id){
     //     filter: dbFilter,
     //   })
     //   .catch((error) => handleError(error));
-    //   console.log({response2})
+
   
     let posts = [];
     if (response) {
@@ -275,7 +282,7 @@ async function queryDatabase(id){
         });
       }
     }
-    // console.log({posts})
+
     return posts;
   }
 
@@ -295,7 +302,6 @@ async function queryDatabase(id){
       allPosts = posts.map(d => [d.title, d.slug])
 
       postMap = new Map(allPosts)
-     // console.log({backlinks})
   
       for (const post of posts) {
         let name = await createMarkdownFile(post);
