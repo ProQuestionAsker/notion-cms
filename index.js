@@ -81,7 +81,7 @@ function styledText(obj) {
         }
     }
 
-    if (obj.type === "mention"){
+    else if (obj.type === "mention"){
         const slug = postMap.get(obj.plain_text)
         // the link is to a private Notion page
         if (slug === undefined){
@@ -92,6 +92,9 @@ function styledText(obj) {
             content = `[${obj.plain_text}](${slug})`
         }
     }
+
+
+    else console.log({other: obj})
     return content;
   }
 
@@ -111,7 +114,10 @@ async function findChildren(block, title){
                 const language = title.split("- ")[1]
                 const full = "```" + language + "\n" + text + "\n" + "```\n"
                 results = full
-            }   
+            } 
+            else if (title.includes('Svelte')){
+              results = text
+            }  
         }
     }
     return results
@@ -120,7 +126,7 @@ async function findChildren(block, title){
 function formatImage(block){
     if (block.image){
         const caption = block.image.caption[0] ?  block.image.caption[0].plain_text : ''
-        return `<img src="${block.image.url}" alt="${caption}" >`
+        return `<img src="${block.image.file.url}" alt="${caption}" >`
     } else return ""
 }
 
@@ -149,6 +155,7 @@ function formatImage(block){
                 }))
                 .filter(d => d.slug !== undefined)
                 .filter(d => d)
+
             if (mentions.length){
                 backlinks.push(mentions)
             }
@@ -159,7 +166,7 @@ function formatImage(block){
     
     let text =
       `---\ntitle: "${post.title}"\n` +
-      `published: "${post.custom ? post.custom.date.start :  post.created.substring(0, 10)}"\n` +
+      `published: "${post.published}"\n` +
       `featured: "${post.featured}"\n` +
       `updated: "${post.edited.substring(0, 10)}"\n` +
       `completeness: "${post.completeness}"\n` +
@@ -168,6 +175,7 @@ function formatImage(block){
       //`category: "${post.category.toLowerCase()}"\n` +
       `type: "${post.type}"\n---\n\n`;
 
+      //if (post.description.rich_text.length)  console.log({des: post.description.rich_text[0].plain_text})
   
     // Generate text from block
     for (block of page_blocks.results) {
@@ -218,7 +226,7 @@ function formatImage(block){
           const toggleTitle = block.toggle.text[0].plain_text
           text += await findChildren(block, toggleTitle)
           break;
-        case "unsupported":
+        case "image":
             text += formatImage(block)
           break;
         default:
@@ -287,9 +295,10 @@ async function queryDatabase(id){
           id: post.id,
           custom: post.properties['Custom Created'],
           created: post.created_time,
+          published: post.properties['Custom Created'] ? post.properties['Custom Created'].date.start :  post.created_time.substring(0, 10),
           featured: post.properties.Featured.checkbox,
           edited: post.last_edited_time,
-          description: post.properties.Description == 'undefined' ? '' : post.properties.Description,
+          description: post.properties.Description.rich_text.length === 0 ? '' : post.properties.Description.rich_text[0].plain_text,
           slug: post.properties.Slug.rich_text[0].plain_text,
           type: post.properties.Type ? post.properties.Type.select.name : '',
           completeness: post.properties.Completeness ? post.properties.Completeness.select.name : ''
@@ -300,6 +309,9 @@ async function queryDatabase(id){
     return posts;
   }
 
+  function returnBacklinks(slug){
+    return backlinks.flat().filter(d => d.slug === slug).map(d => d.linkedFrom)
+  }
 
 /**
  * Saves newly published posts from Notion into post directory for SvelteKit site.
@@ -324,10 +336,25 @@ async function queryDatabase(id){
         status.posts.push({ id: post.id, name });
       }
 
-      const filePath = `${process.env.BLOG_DIRECTORY}/src/backlinks.json`
-      const flatLinks = backlinks.flat()
+      const allFilePath = `${process.env.BLOG_DIRECTORY}/src/posts.json`
+      const flatPosts = posts.map(d => ({
+          title: d.title, 
+          published: d.published, 
+          featured: d.featured, 
+          edited: d.edited, 
+          description: d.description, 
+          slug: d.slug, 
+          type: d.type, 
+          completeness: d.completeness,
+          backlinks: returnBacklinks(d.slug)
+      }))
+        .flat()
 
-      fs.writeFile(filePath, JSON.stringify(flatLinks), function err(e) {
+      // fs.writeFile(filePath, JSON.stringify(flatLinks), function err(e) {
+      //   if (e) throw e;
+      // });
+
+      fs.writeFile(allFilePath, JSON.stringify(flatPosts), function err(e) {
         if (e) throw e;
       });
     } catch (error) {
