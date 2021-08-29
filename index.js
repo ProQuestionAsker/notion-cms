@@ -93,8 +93,6 @@ function styledText(obj) {
         }
     }
 
-
-    else console.log({other: obj})
     return content;
   }
 
@@ -102,6 +100,7 @@ async function findChildren(block, title){
     const childBlock = await notion.blocks.children.list({
         block_id: block.id
     })
+    
     let results;
 
     for (block of childBlock.results) {
@@ -130,18 +129,38 @@ function formatImage(block){
     } else return ""
 }
 
+async function fetchBlocks(id, start){
+  const blocks = await notion.blocks.children.list({
+    block_id: id,
+    start_cursor: start
+  });
+
+  return blocks;
+}
 
 /**
  * Converts post in Notion into Markdown format.
  * @param {Object} post  Post to convert to Markdown.
  */
  async function createMarkdownFile(post) {
-    // collect all block content from the post
-    const page_blocks = await notion.blocks.children.list({
-        block_id: post.id,
-      });
+   let resultBlocks = [];
+   let max = 20; // max times to loop - will stop at 2000 blocks on a page
+   let start = undefined
 
-    for (block of page_blocks.results) {
+   for (let i = 0; i < max; i++) {
+      const {results, next_cursor, has_more} = await fetchBlocks(post.id, start)
+      resultBlocks.push(results)
+      start = next_cursor
+
+      if (!has_more) break; 
+  }
+
+
+    let flatBlocks;
+    if (resultBlocks.length > 1) flatBlocks = [resultBlocks.flat()]
+    else flatBlocks = resultBlocks;
+
+    for (block of flatBlocks[0]) {
         const type = block.type
 
         if (type == 'paragraph'){
@@ -178,7 +197,7 @@ function formatImage(block){
       //if (post.description.rich_text.length)  console.log({des: post.description.rich_text[0].plain_text})
   
     // Generate text from block
-    for (block of page_blocks.results) {
+    for (block of flatBlocks[0]) {
       // Blocks can be: paragraph, heading_1, heading_2, heading_3, or 'unsupported' (quote)
     //   if (block.has_children === true){
     //       if (block.type === 'toggle'){
