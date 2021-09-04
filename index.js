@@ -5,9 +5,12 @@ const fs = require("fs"),
   util = require("util"),
   path = require("path")
 
+const download = require("image-downloader")
+
 let allPosts = [];
 let postMap = null;
 let backlinks = [];
+let images = [];
 
 
 // Initializations
@@ -115,18 +118,29 @@ async function findChildren(block, title){
                 results = full
             } 
             else if (title.includes('Svelte')){
-              results = text
+              results = `${text}\n`
             }  
         }
     }
     return results
 }
 
-function formatImage(block){
+function formatImage(block, slug, imageCount ){
     if (block.image){
         const caption = block.image.caption[0] ?  block.image.caption[0].plain_text : ''
-        return `<img src="${block.image.file.url}" alt="${caption}" >`
+        images.push({slug, fileName: `image-${imageCount}`, url: block.image.file.url})
+        const findFilename = new RegExp("[^/]+(.png|.jpg)")
+        const fileName = findFilename.exec(block.image.file.url)
+        const filePath = `/src/posts/${slug}/${fileName[0]}`
+        return `<img src="${filePath}" alt="${caption}" >`
     } else return ""
+}
+
+function downloadImage(url, filepath) {
+  return download.image({
+     url,
+     dest: filepath 
+  });
 }
 
 async function fetchBlocks(id, start){
@@ -146,6 +160,7 @@ async function fetchBlocks(id, start){
    let resultBlocks = [];
    let max = 20; // max times to loop - will stop at 2000 blocks on a page
    let start = undefined
+   let imageCount = 0
 
    for (let i = 0; i < max; i++) {
       const {results, next_cursor, has_more} = await fetchBlocks(post.id, start)
@@ -246,7 +261,8 @@ async function fetchBlocks(id, start){
           text += await findChildren(block, toggleTitle)
           break;
         case "image":
-            text += formatImage(block)
+            text += formatImage(block, post.slug, imageCount)
+            imageCount += 1
           break;
         default:
           break;
@@ -254,16 +270,32 @@ async function fetchBlocks(id, start){
     }
   
     // Write text to file
-    let fileName = `${post.slug}.md`;
-    const filePath = path.join(
+    let directory = `${post.slug}`
+    let fileName = `index.md`;
+    const dirPath = path.join(
       process.env.BLOG_DIRECTORY,
       process.env.POSTS_DIRECTORY,
+      directory
+    );
+    const filePath = path.join(
+      dirPath,
       fileName
     );
+
+    // check if directory exists, if it doesn't, create it
+    if (!fs.existsSync(dirPath)){
+      fs.mkdirSync(dirPath);
+      fs.writeFile(filePath, text, function err(e) {
+        if (e) throw e;
+      });
+    } else {
+      fs.writeFile(filePath, text, function err(e) {
+        if (e) throw e;
+      });
+    }
+
   
-    fs.writeFile(filePath, text, function err(e) {
-      if (e) throw e;
-    });
+
   
     return fileName;
   }
@@ -372,10 +404,27 @@ async function queryDatabase(id){
       // fs.writeFile(filePath, JSON.stringify(flatLinks), function err(e) {
       //   if (e) throw e;
       // });
+    
 
       fs.writeFile(allFilePath, JSON.stringify(flatPosts), function err(e) {
         if (e) throw e;
       });
+
+      // download files to appropriate locations
+      images.forEach(image => {
+        const {slug, fileName, url} = image;
+        const filepath = `${process.env.BLOG_DIRECTORY}/src/posts/${slug}`
+        downloadImage(url, filepath)
+    
+      })
+      // for (const images of image){
+      //   const {slug, fileName, url} = image;
+      //   console.log({slug, url, image})
+      //   const filepath = `${process.env.BLOG_DIRECTORY}/src/posts/${slug}`
+      //   //downloadImage(url, filepath)
+      // }
+
+
     } catch (error) {
       status.success = false;
       console.log({error})
