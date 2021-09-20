@@ -9,6 +9,7 @@ const download = require("image-downloader")
 
 let allPosts = [];
 let postMap = null;
+let quoteMap = null;
 let backlinks = [];
 let images = [];
 
@@ -31,6 +32,16 @@ const dbFilter = {
         equals: true,
     },
 };
+
+// Helper Functions
+function slugify(string) {
+  return string.toString().toLowerCase()
+    .replace(/\s+/g, '-')       // Replace spaces with -
+    .replace(/[^\w-]+/g, '')    // Remove all non-word chars
+    .replace(/--+/g, '-')       // Replace multiple - with single -
+    .replace(/^-+/, '')         // Trim - from start of text
+    .replace(/-+$/, '')         // Trim - from end of text
+}
 
 /**
  * Logs error to file.
@@ -85,14 +96,22 @@ function styledText(obj) {
     }
 
     else if (obj.type === "mention"){
-        const slug = postMap.get(obj.plain_text)
+        const title = obj.plain_text
+        const slug = postMap.get(title)
+        const quoteSlug = quoteMap.get(title)
+        //const quoteNames = allQuotes//.map(d => d.title)
+
         // the link is to a private Notion page
-        if (slug === undefined){
-            // no link if there isn't one
-            content = `${obj.plain_text}`
+        if (slug === undefined && quoteSlug !== undefined){
+          console.log({quoteSlug})
+            // add special syntax for a quote
+            content = `[${title}](quote:${quoteSlug})`
+        } else if (slug === undefined && quoteSlug === undefined){
+          // no link if there isn't one
+          content = `${title}`
         } else {
             // include a link if one exists
-            content = `[${obj.plain_text}](${slug})`
+            content = `[${title}](${slug})`
         }
     }
 
@@ -156,14 +175,15 @@ async function fetchBlocks(id, start){
  * Converts post in Notion into Markdown format.
  * @param {Object} post  Post to convert to Markdown.
  */
- async function createMarkdownFile(post) {
+ async function createMarkdownFile(post, type) {
    let resultBlocks = [];
    let max = 20; // max times to loop - will stop at 2000 blocks on a page
    let start = undefined
    let imageCount = 0
 
+
    for (let i = 0; i < max; i++) {
-      const {results, next_cursor, has_more} = await fetchBlocks(post.id, start)
+      const {results, next_cursor, has_more} = await fetchBlocks(post.id, start).catch(err => console.error(err))
       resultBlocks.push(results)
       start = next_cursor
 
@@ -196,34 +216,33 @@ async function fetchBlocks(id, start){
         }
     }
 
-    
-    
-    let text =
-      `---\ntitle: "${post.title}"\n` +
-      `published: "${post.published}"\n` +
-      `featured: "${post.featured}"\n` +
-      `updated: "${post.edited.substring(0, 10)}"\n` +
-      `completeness: "${post.completeness}"\n` +
-      `slug: "${post.slug}"\n` +
-      `description: "${post.description}"\n` +
-      //`category: "${post.category.toLowerCase()}"\n` +
-      `type: "${post.type}"\n---\n\n`;
+    let text = ''
 
-      //if (post.description.rich_text.length)  console.log({des: post.description.rich_text[0].plain_text})
-  
+    if (type === 'post'){
+      text =
+        `---\ntitle: "${post.title}"\n` +
+        `published: "${post.published}"\n` +
+        `featured: "${post.featured}"\n` +
+        `updated: "${post.edited.substring(0, 10)}"\n` +
+        `completeness: "${post.completeness}"\n` +
+        `slug: "${post.slug}"\n` +
+        `description: "${post.description}"\n` +
+        //`category: "${post.category.toLowerCase()}"\n` +
+        `type: "${post.type}"\n---\n\n`;
+    } else if (type === 'quote') {
+      text = 
+      `---\ntitle: "${post.title}"\n` +
+      `slug: "${post.slug}"\n` +
+      `resource: "${post.resource}"\n` + 
+      `author: "${post.author}"\n` + 
+      `url: "${post.url}"\n` + 
+      `type: "${post.type}"\n---\n\n`;
+    }
+
     // Generate text from block
     for (block of flatBlocks[0]) {
       // Blocks can be: paragraph, heading_1, heading_2, heading_3, or 'unsupported' (quote)
-    //   if (block.has_children === true){
-    //       if (block.type === 'toggle'){
-    //           const toggleTitle = block.toggle.text[0].plain_text
-    //           const childBlocks = findChildren(block, toggleTitle)
-    //           console.log({childBlocks})
-    //       }
-
-    //   }  
   
-
       switch (block.type) {
         case "paragraph":
           text += "\n";
@@ -261,22 +280,39 @@ async function fetchBlocks(id, start){
           text += await findChildren(block, toggleTitle)
           break;
         case "image":
-            text += formatImage(block, post.slug, imageCount)
-            imageCount += 1
+            if (type === 'post'){
+              text += formatImage(block, post.slug, imageCount)
+              imageCount += 1
+            }
           break;
         default:
           break;
       }
     }
+
+
   
     // Write text to file
+  
     let directory = `${post.slug}`
     let fileName = `index.md`;
-    const dirPath = path.join(
-      process.env.BLOG_DIRECTORY,
-      process.env.POSTS_DIRECTORY,
-      directory
-    );
+
+    let dirPath = ''
+
+    if (type === 'post'){
+      dirPath = path.join(
+        process.env.BLOG_DIRECTORY,
+        process.env.POSTS_DIRECTORY,
+        directory)
+    } else if (type === 'quote'){
+      dirPath = path.join(
+        process.env.BLOG_DIRECTORY,
+        process.env.QUOTES_DIRECTORY,
+        directory)
+    }
+
+    console.log({dirPath})
+ 
     const filePath = path.join(
       dirPath,
       fileName
@@ -293,9 +329,6 @@ async function fetchBlocks(id, start){
         if (e) throw e;
       });
     }
-
-  
-
   
     return fileName;
   }
@@ -312,6 +345,57 @@ async function queryDatabase(id){
     return content
 }
 
+async function queryResources(id){
+  const content = await notion.databases
+    .query({
+      database_id: id,
+    })
+    .catch((error) => handleError(error));
+
+    return content
+}
+
+async function getResources(){
+  // find all the resources that I have quotes from
+  const resourceDB = process.env.NOTION_RESOURCE_DB
+  const contents = await queryResources(resourceDB)
+
+
+  const response = contents.results.map(d => [d.id,d.properties.Name.title[0].plain_text ])
+  return new Map(response)
+}
+
+async function getQuotes(){
+  // find the resource information
+  const resourceMap = await getResources()
+
+  // then find all the quotes I liked
+  const quoteDB = process.env.NOTION_QUOTE_DB
+  const contents = await queryResources(quoteDB)
+  const response = contents.results//.concat(res[1].results)
+  const allQuotes = contents.results.map(d => [d.properties.Name.title[0].plain_text, slugify(d.properties.Name.title[0].plain_text)]);
+  quoteMap = new Map(allQuotes)
+  
+  let quotes = [];
+
+  if (response) {
+    const full_quotes = response.length > 0 ? response : [];
+
+    for (const quote of full_quotes) {
+      quotes.push({
+        title: quote.properties.Name.title[0].plain_text,
+        resource: resourceMap.get(quote.properties['Resource'].relation[0].id),
+        author: quote.properties['Author'].rollup.array[0].text[0].plain_text,
+        url: quote.properties['Source'].rollup.array[0].url,
+        type: quote.properties['Source Type'].rollup.array[0].select.name,
+        slug: slugify(quote.properties.Name.title[0].plain_text),
+        id: quote.id
+      })
+    }
+  }
+  return quotes
+}
+
 /**
  * Get posts to publish, including all relevant properties.
  */
@@ -325,15 +409,6 @@ async function queryDatabase(id){
     }
 
     const response = res[0].results.concat(res[1].results)
-
-    // // Pulls the posts in my blog database checked Publish
-    // const response2 = await notion.databases
-    //   .query({
-    //     database_id: process.env.NOTION_DATABASE_ID,
-    //     filter: dbFilter,
-    //   })
-    //   .catch((error) => handleError(error));
-
   
     let posts = [];
     if (response) {
@@ -360,69 +435,75 @@ async function queryDatabase(id){
     return posts;
   }
 
-  function returnBacklinks(slug){
-    return backlinks.flat().filter(d => d.slug === slug).map(d => d.linkedFrom)
+function returnBacklinks(slug){
+  return backlinks.flat().filter(d => d.slug === slug).map(d => d.linkedFrom)
+}
+
+async function processQuotes(){
+  let quotes = await getQuotes()
+  
+  for (const quote of quotes){
+    let name = await createMarkdownFile(quote, type = 'quote')
   }
+
+
+}
+
+async function processPosts(){
+  let posts = await getPostsToPublish();
+  allPosts = posts.map(d => [d.title, d.slug])
+
+  postMap = new Map(allPosts)
+
+  for (const post of posts) {
+    let status = {
+      success: true,
+      posts: [],
+    };
+
+    let name = await createMarkdownFile(post, type = 'post');
+    status.posts.push({ id: post.id, name });
+  }
+
+  const allFilePath = `${process.env.BLOG_DIRECTORY}/src/posts.json`
+  const flatPosts = posts.map(d => ({
+      title: d.title, 
+      published: d.published, 
+      featured: d.featured, 
+      edited: d.edited, 
+      description: d.description, 
+      slug: d.slug, 
+      type: d.type, 
+      completeness: d.completeness,
+      backlinks: returnBacklinks(d.slug)
+  }))
+    .flat()
+
+  fs.writeFile(allFilePath, JSON.stringify(flatPosts), function err(e) {
+    if (e) throw e;
+  });
+
+  // download files to appropriate locations
+  images.forEach(image => {
+    const {slug, fileName, url} = image;
+    const filepath = `${process.env.BLOG_DIRECTORY}/src/posts/${slug}`
+    downloadImage(url, filepath)
+  })
+}
 
 /**
  * Saves newly published posts from Notion into post directory for SvelteKit site.
  * @returns Status object with properties: success (bool) and posts (list of post names)
  */
  async function savePosts() {
-    let status = {
-      success: true,
-      posts: [],
-    };
-
+  let status = {
+    success: true,
+    posts: [],
+  };
   
     try {
-      let posts = await getPostsToPublish();
-      allPosts = posts.map(d => [d.title, d.slug])
-
-      postMap = new Map(allPosts)
-  
-      for (const post of posts) {
-
-        let name = await createMarkdownFile(post);
-        status.posts.push({ id: post.id, name });
-      }
-
-      const allFilePath = `${process.env.BLOG_DIRECTORY}/src/posts.json`
-      const flatPosts = posts.map(d => ({
-          title: d.title, 
-          published: d.published, 
-          featured: d.featured, 
-          edited: d.edited, 
-          description: d.description, 
-          slug: d.slug, 
-          type: d.type, 
-          completeness: d.completeness,
-          backlinks: returnBacklinks(d.slug)
-      }))
-        .flat()
-
-      // fs.writeFile(filePath, JSON.stringify(flatLinks), function err(e) {
-      //   if (e) throw e;
-      // });
-    
-
-      fs.writeFile(allFilePath, JSON.stringify(flatPosts), function err(e) {
-        if (e) throw e;
-      });
-
-      // download files to appropriate locations
-      images.forEach(image => {
-        const {slug, fileName, url} = image;
-        const filepath = `${process.env.BLOG_DIRECTORY}/src/posts/${slug}`
-        downloadImage(url, filepath)
-    
-      })
-      // for (const images of image){
-      //   const {slug, fileName, url} = image;
-      //   console.log({slug, url, image})
-      //   const filepath = `${process.env.BLOG_DIRECTORY}/src/posts/${slug}`
-      //   //downloadImage(url, filepath)
-      // }
+      processPosts(status)
+      processQuotes().catch(err => console.error(err))
 
 
     } catch (error) {
